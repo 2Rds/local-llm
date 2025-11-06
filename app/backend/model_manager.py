@@ -1,10 +1,16 @@
 import os
 import json
 import shutil
+import base64
+from io import BytesIO
 from pathlib import Path
 from huggingface_hub import snapshot_download, list_models, model_info
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, pipeline
+from diffusers import DiffusionPipeline, StableDiffusionPipeline, StableDiffusionImg2ImgPipeline
+from PIL import Image
 import torch
+import cv2
+import numpy as np
 
 class ModelManager:
     def __init__(self, models_dir="models"):
@@ -13,7 +19,9 @@ class ModelManager:
         self.config_file = self.models_dir / "models_config.json"
         self.loaded_model = None
         self.loaded_tokenizer = None
+        self.loaded_pipeline = None
         self.current_model_id = None
+        self.current_model_type = None
 
         # Initialize config file
         if not self.config_file.exists():
@@ -32,9 +40,42 @@ class ModelManager:
         with open(self.config_file, 'w') as f:
             json.dump(config, f, indent=2)
 
-    def search_models(self, query="", limit=20, task="text-generation"):
+    def _detect_model_type(self, model_id):
+        """Detect the type of model from HuggingFace"""
+        try:
+            info = model_info(model_id)
+            pipeline_tag = getattr(info, 'pipeline_tag', None)
+
+            # Map HuggingFace pipeline tags to our model types
+            type_mapping = {
+                'text-generation': 'text-to-text',
+                'text2text-generation': 'text-to-text',
+                'text-to-image': 'text-to-image',
+                'image-to-image': 'image-to-image',
+                'text-to-video': 'text-to-video',
+                'image-to-video': 'image-to-video',
+            }
+
+            model_type = type_mapping.get(pipeline_tag, 'text-to-text')
+            return model_type
+        except Exception as e:
+            print(f"Could not detect model type, defaulting to text-to-text: {e}")
+            return 'text-to-text'
+
+    def search_models(self, query="", limit=20, model_type=None):
         """Search models on HuggingFace"""
         try:
+            # Map our model types to HuggingFace pipeline tags
+            task_mapping = {
+                'text-to-text': 'text-generation',
+                'text-to-image': 'text-to-image',
+                'image-to-image': 'image-to-image',
+                'text-to-video': 'text-to-video',
+                'image-to-video': 'image-to-video',
+            }
+
+            task = task_mapping.get(model_type) if model_type else None
+
             models = list_models(
                 search=query,
                 task=task,
@@ -47,6 +88,8 @@ class ModelManager:
             for model in models:
                 try:
                     info = model_info(model.modelId)
+                    detected_type = self._detect_model_type(model.modelId)
+
                     results.append({
                         "id": model.modelId,
                         "name": model.modelId.split('/')[-1],
@@ -54,6 +97,7 @@ class ModelManager:
                         "downloads": getattr(model, 'downloads', 0),
                         "likes": getattr(model, 'likes', 0),
                         "tags": getattr(model, 'tags', []),
+                        "model_type": detected_type,
                     })
                 except:
                     continue
@@ -67,6 +111,7 @@ class ModelManager:
         """Download a model from HuggingFace"""
         try:
             model_path = self.models_dir / model_id.replace('/', '--')
+            model_type = self._detect_model_type(model_id)
 
             # Download model
             snapshot_download(
@@ -79,11 +124,12 @@ class ModelManager:
             config = self._load_config()
             config[model_id] = {
                 "path": str(model_path),
-                "downloaded_at": str(Path(model_path).stat().st_mtime)
+                "downloaded_at": str(Path(model_path).stat().st_mtime),
+                "model_type": model_type
             }
             self._save_config(config)
 
-            return {"success": True, "path": str(model_path)}
+            return {"success": True, "path": str(model_path), "model_type": model_type}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -103,7 +149,8 @@ class ModelManager:
                     "author": model_id.split('/')[0] if '/' in model_id else "unknown",
                     "path": str(model_path),
                     "size": total_size,
-                    "size_mb": round(total_size / (1024 * 1024), 2)
+                    "size_mb": round(total_size / (1024 * 1024), 2),
+                    "model_type": model_data.get("model_type", "text-to-text")
                 })
 
         return models
@@ -132,7 +179,7 @@ class ModelManager:
         """Load a model for inference"""
         try:
             # Unload current model if any
-            if self.loaded_model is not None:
+            if self.loaded_model is not None or self.loaded_pipeline is not None:
                 self.unload_model()
 
             config = self._load_config()
@@ -140,39 +187,72 @@ class ModelManager:
                 return {"success": False, "error": "Model not downloaded"}
 
             model_path = config[model_id]["path"]
+            model_type = config[model_id].get("model_type", "text-to-text")
 
             # Determine device
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
-            # Load tokenizer
-            self.loaded_tokenizer = AutoTokenizer.from_pretrained(
-                model_path,
-                trust_remote_code=True
-            )
+            # Load based on model type
+            if model_type == "text-to-text":
+                # Load tokenizer
+                self.loaded_tokenizer = AutoTokenizer.from_pretrained(
+                    model_path,
+                    trust_remote_code=True
+                )
 
-            # Load model
-            self.loaded_model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                device_map="auto" if device == "cuda" else None,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
-            )
+                # Load model
+                self.loaded_model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    device_map="auto" if device == "cuda" else None,
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True
+                )
 
-            if device == "cpu":
-                self.loaded_model = self.loaded_model.to(device)
+                if device == "cpu":
+                    self.loaded_model = self.loaded_model.to(device)
+
+            elif model_type == "text-to-image":
+                # Load Stable Diffusion or similar
+                self.loaded_pipeline = DiffusionPipeline.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    safety_checker=None
+                )
+                self.loaded_pipeline = self.loaded_pipeline.to(device)
+
+            elif model_type == "image-to-image":
+                # Load image-to-image pipeline
+                self.loaded_pipeline = StableDiffusionImg2ImgPipeline.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    safety_checker=None
+                )
+                self.loaded_pipeline = self.loaded_pipeline.to(device)
+
+            elif model_type in ["text-to-video", "image-to-video"]:
+                # Load video generation pipeline
+                self.loaded_pipeline = DiffusionPipeline.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                )
+                self.loaded_pipeline = self.loaded_pipeline.to(device)
 
             self.current_model_id = model_id
+            self.current_model_type = model_type
 
             return {
                 "success": True,
                 "model_id": model_id,
+                "model_type": model_type,
                 "device": device
             }
         except Exception as e:
             self.loaded_model = None
             self.loaded_tokenizer = None
+            self.loaded_pipeline = None
             self.current_model_id = None
+            self.current_model_type = None
             return {"success": False, "error": str(e)}
 
     def unload_model(self):
@@ -180,51 +260,233 @@ class ModelManager:
         if self.loaded_model is not None:
             del self.loaded_model
             del self.loaded_tokenizer
-            self.loaded_model = None
-            self.loaded_tokenizer = None
-            self.current_model_id = None
-            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        if self.loaded_pipeline is not None:
+            del self.loaded_pipeline
 
-    def generate(self, prompt, max_length=100, temperature=0.7, top_p=0.9, top_k=50):
-        """Generate text using the loaded model"""
-        if self.loaded_model is None or self.loaded_tokenizer is None:
+        self.loaded_model = None
+        self.loaded_tokenizer = None
+        self.loaded_pipeline = None
+        self.current_model_id = None
+        self.current_model_type = None
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
+    def generate(self, prompt, max_length=100, temperature=0.7, top_p=0.9, top_k=50,
+                 num_inference_steps=50, guidance_scale=7.5, image_data=None):
+        """Generate output using the loaded model"""
+
+        if self.current_model_type is None:
             return {"success": False, "error": "No model loaded"}
 
         try:
-            # Tokenize input
-            inputs = self.loaded_tokenizer(prompt, return_tensors="pt")
-            inputs = {k: v.to(self.loaded_model.device) for k, v in inputs.items()}
+            if self.current_model_type == "text-to-text":
+                return self._generate_text(prompt, max_length, temperature, top_p, top_k)
 
-            # Generate
-            with torch.no_grad():
-                outputs = self.loaded_model.generate(
-                    **inputs,
-                    max_new_tokens=max_length,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k,
-                    do_sample=True,
-                    pad_token_id=self.loaded_tokenizer.eos_token_id
-                )
+            elif self.current_model_type == "text-to-image":
+                return self._generate_image_from_text(prompt, num_inference_steps, guidance_scale)
 
-            # Decode
-            generated_text = self.loaded_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            elif self.current_model_type == "image-to-image":
+                if not image_data:
+                    return {"success": False, "error": "Image input required for image-to-image model"}
+                return self._generate_image_from_image(prompt, image_data, num_inference_steps, guidance_scale)
 
-            # Remove the prompt from the output
-            response = generated_text[len(prompt):].strip()
+            elif self.current_model_type == "text-to-video":
+                return self._generate_video_from_text(prompt, num_inference_steps, guidance_scale)
+
+            elif self.current_model_type == "image-to-video":
+                if not image_data:
+                    return {"success": False, "error": "Image input required for image-to-video model"}
+                return self._generate_video_from_image(prompt, image_data, num_inference_steps)
+
+            else:
+                return {"success": False, "error": f"Unsupported model type: {self.current_model_type}"}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _generate_text(self, prompt, max_length, temperature, top_p, top_k):
+        """Generate text using text-generation model"""
+        if self.loaded_model is None or self.loaded_tokenizer is None:
+            return {"success": False, "error": "No text model loaded"}
+
+        inputs = self.loaded_tokenizer(prompt, return_tensors="pt")
+        inputs = {k: v.to(self.loaded_model.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = self.loaded_model.generate(
+                **inputs,
+                max_new_tokens=max_length,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                do_sample=True,
+                pad_token_id=self.loaded_tokenizer.eos_token_id
+            )
+
+        generated_text = self.loaded_tokenizer.decode(outputs[0], skip_special_tokens=True)
+        response = generated_text[len(prompt):].strip()
+
+        return {
+            "success": True,
+            "response": response,
+            "full_text": generated_text,
+            "type": "text"
+        }
+
+    def _generate_image_from_text(self, prompt, num_inference_steps, guidance_scale):
+        """Generate image from text using text-to-image model"""
+        if self.loaded_pipeline is None:
+            return {"success": False, "error": "No image generation model loaded"}
+
+        result = self.loaded_pipeline(
+            prompt,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale
+        )
+
+        image = result.images[0]
+
+        # Convert to base64
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+
+        return {
+            "success": True,
+            "image": img_str,
+            "type": "image"
+        }
+
+    def _generate_image_from_image(self, prompt, image_data, num_inference_steps, guidance_scale):
+        """Generate image from image using image-to-image model"""
+        if self.loaded_pipeline is None:
+            return {"success": False, "error": "No image-to-image model loaded"}
+
+        # Decode base64 image
+        image_bytes = base64.b64decode(image_data.split(',')[1] if ',' in image_data else image_data)
+        input_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+
+        result = self.loaded_pipeline(
+            prompt=prompt,
+            image=input_image,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            strength=0.75
+        )
+
+        image = result.images[0]
+
+        # Convert to base64
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+
+        return {
+            "success": True,
+            "image": img_str,
+            "type": "image"
+        }
+
+    def _generate_video_from_text(self, prompt, num_inference_steps, guidance_scale):
+        """Generate video from text"""
+        if self.loaded_pipeline is None:
+            return {"success": False, "error": "No video generation model loaded"}
+
+        try:
+            result = self.loaded_pipeline(
+                prompt,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                num_frames=16  # Generate 16 frames
+            )
+
+            # result.frames is a list of PIL images
+            frames = result.frames[0] if hasattr(result, 'frames') else result.images
+
+            # Convert frames to video (save as MP4)
+            video_path = self.models_dir / f"temp_video_{hash(prompt)}.mp4"
+
+            # Convert PIL images to numpy arrays
+            frame_arrays = [np.array(frame) for frame in frames]
+
+            # Save as video
+            height, width, _ = frame_arrays[0].shape
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(str(video_path), fourcc, 8.0, (width, height))
+
+            for frame in frame_arrays:
+                out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+            out.release()
+
+            # Read video and convert to base64
+            with open(video_path, 'rb') as f:
+                video_bytes = f.read()
+                video_str = base64.b64encode(video_bytes).decode()
+
+            # Clean up
+            video_path.unlink()
 
             return {
                 "success": True,
-                "response": response,
-                "full_text": generated_text
+                "video": video_str,
+                "type": "video"
             }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": f"Video generation error: {str(e)}"}
+
+    def _generate_video_from_image(self, prompt, image_data, num_inference_steps):
+        """Generate video from image"""
+        if self.loaded_pipeline is None:
+            return {"success": False, "error": "No image-to-video model loaded"}
+
+        try:
+            # Decode base64 image
+            image_bytes = base64.b64decode(image_data.split(',')[1] if ',' in image_data else image_data)
+            input_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+
+            result = self.loaded_pipeline(
+                prompt=prompt,
+                image=input_image,
+                num_inference_steps=num_inference_steps,
+                num_frames=16
+            )
+
+            frames = result.frames[0] if hasattr(result, 'frames') else result.images
+
+            # Convert frames to video
+            video_path = self.models_dir / f"temp_video_{hash(prompt)}.mp4"
+
+            frame_arrays = [np.array(frame) for frame in frames]
+            height, width, _ = frame_arrays[0].shape
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(str(video_path), fourcc, 8.0, (width, height))
+
+            for frame in frame_arrays:
+                out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+            out.release()
+
+            with open(video_path, 'rb') as f:
+                video_bytes = f.read()
+                video_str = base64.b64encode(video_bytes).decode()
+
+            video_path.unlink()
+
+            return {
+                "success": True,
+                "video": video_str,
+                "type": "video"
+            }
+        except Exception as e:
+            return {"success": False, "error": f"Video generation error: {str(e)}"}
 
     def get_model_status(self):
         """Get current model status"""
         return {
-            "loaded": self.loaded_model is not None,
+            "loaded": self.loaded_model is not None or self.loaded_pipeline is not None,
             "model_id": self.current_model_id,
-            "device": str(self.loaded_model.device) if self.loaded_model is not None else None
+            "model_type": self.current_model_type,
+            "device": str(self.loaded_model.device) if self.loaded_model is not None else (
+                str(self.loaded_pipeline.device) if self.loaded_pipeline is not None else None
+            )
         }

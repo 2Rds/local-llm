@@ -3,12 +3,21 @@ const API_BASE = 'http://localhost:5000/api';
 
 // State
 let currentModel = null;
+let currentModelType = null;
+let uploadedImages = {
+    transform: null,
+    i2v: null
+};
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     initializeTabs();
     initializeSearch();
-    initializeChat();
+    initializeTextChat();
+    initializeImageGeneration();
+    initializeImageTransform();
+    initializeVideoGeneration();
+    initializeImageToVideo();
     loadDownloadedModels();
     updateModelStatus();
 
@@ -39,12 +48,46 @@ function initializeTabs() {
     });
 }
 
+// Show/hide tabs based on model type
+function updateVisibleTabs(modelType) {
+    // Hide all generation tabs
+    document.getElementById('text-chat-tab-btn').style.display = 'none';
+    document.getElementById('image-gen-tab-btn').style.display = 'none';
+    document.getElementById('image-transform-tab-btn').style.display = 'none';
+    document.getElementById('video-gen-tab-btn').style.display = 'none';
+    document.getElementById('image-to-video-tab-btn').style.display = 'none';
+
+    // Show appropriate tab based on model type
+    if (modelType === 'text-to-text') {
+        const tab = document.getElementById('text-chat-tab-btn');
+        tab.style.display = 'block';
+        tab.click();
+    } else if (modelType === 'text-to-image') {
+        const tab = document.getElementById('image-gen-tab-btn');
+        tab.style.display = 'block';
+        tab.click();
+    } else if (modelType === 'image-to-image') {
+        const tab = document.getElementById('image-transform-tab-btn');
+        tab.style.display = 'block';
+        tab.click();
+    } else if (modelType === 'text-to-video') {
+        const tab = document.getElementById('video-gen-tab-btn');
+        tab.style.display = 'block';
+        tab.click();
+    } else if (modelType === 'image-to-video') {
+        const tab = document.getElementById('image-to-video-tab-btn');
+        tab.style.display = 'block';
+        tab.click();
+    }
+}
+
 // Search functionality
 function initializeSearch() {
     const searchBtn = document.getElementById('search-btn');
     const searchInput = document.getElementById('search-input');
     const directDownloadBtn = document.getElementById('direct-download-btn');
     const directInput = document.getElementById('direct-input');
+    const modelTypeFilter = document.getElementById('model-type-filter');
     const suggestions = document.querySelectorAll('.model-suggestion');
 
     // Direct download functionality
@@ -74,6 +117,9 @@ function initializeSearch() {
         if (e.key === 'Enter') performSearch();
     });
 
+    // Model type filter
+    modelTypeFilter.addEventListener('change', performSearch);
+
     suggestions.forEach(suggestion => {
         suggestion.addEventListener('click', () => {
             searchInput.value = suggestion.dataset.model;
@@ -87,6 +133,7 @@ function initializeSearch() {
 
 async function performSearch() {
     const query = document.getElementById('search-input').value;
+    const modelType = document.getElementById('model-type-filter').value;
     const resultsDiv = document.getElementById('search-results');
     const loadingDiv = document.getElementById('search-loading');
 
@@ -94,7 +141,12 @@ async function performSearch() {
     loadingDiv.style.display = 'block';
 
     try {
-        const response = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&limit=20`);
+        let url = `${API_BASE}/search?q=${encodeURIComponent(query)}&limit=20`;
+        if (modelType) {
+            url += `&model_type=${encodeURIComponent(modelType)}`;
+        }
+
+        const response = await fetch(url);
         const data = await response.json();
 
         loadingDiv.style.display = 'none';
@@ -117,6 +169,10 @@ async function performSearch() {
 function createModelCard(model, isDownloaded) {
     const card = document.createElement('div');
     card.className = 'model-card';
+
+    const modelTypeBadge = model.model_type
+        ? `<div class="model-type-badge model-type-${model.model_type}">${model.model_type.replace(/-/g, ' ')}</div>`
+        : '';
 
     const tagsHtml = model.tags && model.tags.length > 0
         ? `<div class="model-tags">${model.tags.slice(0, 3).map(tag => `<span class="tag">${tag}</span>`).join('')}</div>`
@@ -143,6 +199,7 @@ function createModelCard(model, isDownloaded) {
            </div>`;
 
     card.innerHTML = `
+        ${modelTypeBadge}
         <h3>${model.name}</h3>
         <div class="model-author">by ${model.author}</div>
         ${sizeHtml}
@@ -168,7 +225,7 @@ async function downloadModel(modelId) {
         const data = await response.json();
 
         if (data.success) {
-            showToast(`Successfully downloaded ${modelId}`, 'success');
+            showToast(`Successfully downloaded ${modelId} (Type: ${data.model_type})`, 'success');
             loadDownloadedModels();
         } else {
             showToast(`Error downloading model: ${data.error}`, 'error');
@@ -251,11 +308,10 @@ async function loadModel(modelId) {
 
         if (data.success) {
             currentModel = modelId;
-            showToast(`Successfully loaded ${modelId} on ${data.device}`, 'success');
+            currentModelType = data.model_type;
+            showToast(`Successfully loaded ${modelId} (${data.model_type}) on ${data.device}`, 'success');
             updateModelStatus();
-
-            // Switch to chat tab
-            document.querySelector('[data-tab="chat"]').click();
+            updateVisibleTabs(data.model_type);
         } else {
             showToast(`Error loading model: ${data.error}`, 'error');
         }
@@ -272,8 +328,10 @@ async function unloadModel() {
 
         if (data.success) {
             currentModel = null;
+            currentModelType = null;
             showToast('Model unloaded', 'success');
             updateModelStatus();
+            updateVisibleTabs(null);
         }
     } catch (error) {
         showToast(`Error unloading model: ${error.message}`, 'error');
@@ -291,62 +349,66 @@ async function updateModelStatus() {
         const unloadBtn = document.getElementById('unload-btn');
 
         if (data.success && data.status.loaded) {
-            statusText.textContent = `Loaded: ${data.status.model_id} (${data.status.device})`;
+            statusText.textContent = `Loaded: ${data.status.model_id} (${data.status.model_type}) [${data.status.device}]`;
             statusDot.classList.add('active');
             unloadBtn.style.display = 'block';
             unloadBtn.onclick = unloadModel;
             currentModel = data.status.model_id;
+            currentModelType = data.status.model_type;
+            updateVisibleTabs(data.status.model_type);
         } else {
             statusText.textContent = 'No model loaded';
             statusDot.classList.remove('active');
             unloadBtn.style.display = 'none';
             currentModel = null;
+            currentModelType = null;
+            updateVisibleTabs(null);
         }
     } catch (error) {
         console.error('Error updating status:', error);
     }
 }
 
-// Chat functionality
-function initializeChat() {
-    const sendBtn = document.getElementById('send-btn');
-    const chatInput = document.getElementById('chat-input');
-    const maxLengthSlider = document.getElementById('max-length');
-    const temperatureSlider = document.getElementById('temperature');
+// Text Chat functionality
+function initializeTextChat() {
+    const sendBtn = document.getElementById('text-send-btn');
+    const chatInput = document.getElementById('text-input');
+    const maxLengthSlider = document.getElementById('text-max-length');
+    const temperatureSlider = document.getElementById('text-temperature');
 
-    sendBtn.addEventListener('click', sendMessage);
+    sendBtn.addEventListener('click', sendTextMessage);
     chatInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            sendMessage();
+            sendTextMessage();
         }
     });
 
     // Update slider values
     maxLengthSlider.addEventListener('input', (e) => {
-        document.getElementById('max-length-value').textContent = e.target.value;
+        document.getElementById('text-max-length-value').textContent = e.target.value;
     });
 
     temperatureSlider.addEventListener('input', (e) => {
-        document.getElementById('temperature-value').textContent = e.target.value;
+        document.getElementById('text-temperature-value').textContent = e.target.value;
     });
 }
 
-async function sendMessage() {
-    const chatInput = document.getElementById('chat-input');
-    const chatMessages = document.getElementById('chat-messages');
-    const sendBtn = document.getElementById('send-btn');
+async function sendTextMessage() {
+    const chatInput = document.getElementById('text-input');
+    const chatMessages = document.getElementById('text-messages');
+    const sendBtn = document.getElementById('text-send-btn');
     const prompt = chatInput.value.trim();
 
     if (!prompt) return;
 
-    if (!currentModel) {
-        showToast('Please load a model first', 'error');
+    if (!currentModel || currentModelType !== 'text-to-text') {
+        showToast('Please load a text-to-text model first', 'error');
         return;
     }
 
     // Add user message
-    addMessage('user', prompt);
+    addTextMessage('user', prompt);
     chatInput.value = '';
 
     // Disable input
@@ -354,8 +416,8 @@ async function sendMessage() {
     chatInput.disabled = true;
 
     try {
-        const maxLength = parseInt(document.getElementById('max-length').value);
-        const temperature = parseFloat(document.getElementById('temperature').value);
+        const maxLength = parseInt(document.getElementById('text-max-length').value);
+        const temperature = parseFloat(document.getElementById('text-temperature').value);
 
         const response = await fetch(`${API_BASE}/generate`, {
             method: 'POST',
@@ -370,12 +432,12 @@ async function sendMessage() {
         const data = await response.json();
 
         if (data.success) {
-            addMessage('assistant', data.response);
+            addTextMessage('assistant', data.response);
         } else {
-            addMessage('error', `Error: ${data.error}`);
+            addTextMessage('error', `Error: ${data.error}`);
         }
     } catch (error) {
-        addMessage('error', `Error: ${error.message}`);
+        addTextMessage('error', `Error: ${error.message}`);
     }
 
     // Re-enable input
@@ -384,8 +446,8 @@ async function sendMessage() {
     chatInput.focus();
 }
 
-function addMessage(type, content) {
-    const chatMessages = document.getElementById('chat-messages');
+function addTextMessage(type, content) {
+    const chatMessages = document.getElementById('text-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
 
@@ -398,6 +460,341 @@ function addMessage(type, content) {
 
     // Scroll to bottom
     chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Image Generation (Text-to-Image)
+function initializeImageGeneration() {
+    const generateBtn = document.getElementById('image-generate-btn');
+    const stepsSlider = document.getElementById('image-steps');
+    const guidanceSlider = document.getElementById('image-guidance');
+
+    generateBtn.addEventListener('click', generateImage);
+
+    stepsSlider.addEventListener('input', (e) => {
+        document.getElementById('image-steps-value').textContent = e.target.value;
+    });
+
+    guidanceSlider.addEventListener('input', (e) => {
+        document.getElementById('image-guidance-value').textContent = e.target.value;
+    });
+}
+
+async function generateImage() {
+    const prompt = document.getElementById('image-prompt').value.trim();
+    const outputDiv = document.getElementById('image-output');
+    const generateBtn = document.getElementById('image-generate-btn');
+
+    if (!prompt) {
+        showToast('Please enter a prompt', 'error');
+        return;
+    }
+
+    if (!currentModel || currentModelType !== 'text-to-image') {
+        showToast('Please load a text-to-image model first', 'error');
+        return;
+    }
+
+    generateBtn.disabled = true;
+    outputDiv.innerHTML = '<div class="generation-loading"><div class="spinner"></div><p>Generating image...</p></div>';
+
+    try {
+        const steps = parseInt(document.getElementById('image-steps').value);
+        const guidance = parseFloat(document.getElementById('image-guidance').value);
+
+        const response = await fetch(`${API_BASE}/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: prompt,
+                num_inference_steps: steps,
+                guidance_scale: guidance
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.image) {
+            outputDiv.innerHTML = `<img src="data:image/png;base64,${data.image}" alt="Generated image">`;
+            showToast('Image generated successfully!', 'success');
+        } else {
+            outputDiv.innerHTML = '<div class="empty-output">Generation failed</div>';
+            showToast(`Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        outputDiv.innerHTML = '<div class="empty-output">Generation failed</div>';
+        showToast(`Error: ${error.message}`, 'error');
+    }
+
+    generateBtn.disabled = false;
+}
+
+// Image Transform (Image-to-Image)
+function initializeImageTransform() {
+    const uploadArea = document.getElementById('transform-upload-area');
+    const fileInput = document.getElementById('transform-image-input');
+    const preview = document.getElementById('transform-preview');
+    const generateBtn = document.getElementById('transform-generate-btn');
+    const stepsSlider = document.getElementById('transform-steps');
+    const guidanceSlider = document.getElementById('transform-guidance');
+
+    setupImageUpload(uploadArea, fileInput, preview, 'transform');
+
+    generateBtn.addEventListener('click', transformImage);
+
+    stepsSlider.addEventListener('input', (e) => {
+        document.getElementById('transform-steps-value').textContent = e.target.value;
+    });
+
+    guidanceSlider.addEventListener('input', (e) => {
+        document.getElementById('transform-guidance-value').textContent = e.target.value;
+    });
+}
+
+async function transformImage() {
+    const prompt = document.getElementById('transform-prompt').value.trim();
+    const outputDiv = document.getElementById('transform-output');
+    const generateBtn = document.getElementById('transform-generate-btn');
+
+    if (!prompt) {
+        showToast('Please enter a prompt', 'error');
+        return;
+    }
+
+    if (!uploadedImages.transform) {
+        showToast('Please upload an image first', 'error');
+        return;
+    }
+
+    if (!currentModel || currentModelType !== 'image-to-image') {
+        showToast('Please load an image-to-image model first', 'error');
+        return;
+    }
+
+    generateBtn.disabled = true;
+    outputDiv.innerHTML = '<div class="generation-loading"><div class="spinner"></div><p>Transforming image...</p></div>';
+
+    try {
+        const steps = parseInt(document.getElementById('transform-steps').value);
+        const guidance = parseFloat(document.getElementById('transform-guidance').value);
+
+        const response = await fetch(`${API_BASE}/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: prompt,
+                image_data: uploadedImages.transform,
+                num_inference_steps: steps,
+                guidance_scale: guidance
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.image) {
+            outputDiv.innerHTML = `<img src="data:image/png;base64,${data.image}" alt="Transformed image">`;
+            showToast('Image transformed successfully!', 'success');
+        } else {
+            outputDiv.innerHTML = '<div class="empty-output">Transformation failed</div>';
+            showToast(`Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        outputDiv.innerHTML = '<div class="empty-output">Transformation failed</div>';
+        showToast(`Error: ${error.message}`, 'error');
+    }
+
+    generateBtn.disabled = false;
+}
+
+// Video Generation (Text-to-Video)
+function initializeVideoGeneration() {
+    const generateBtn = document.getElementById('video-generate-btn');
+    const stepsSlider = document.getElementById('video-steps');
+    const guidanceSlider = document.getElementById('video-guidance');
+
+    generateBtn.addEventListener('click', generateVideo);
+
+    stepsSlider.addEventListener('input', (e) => {
+        document.getElementById('video-steps-value').textContent = e.target.value;
+    });
+
+    guidanceSlider.addEventListener('input', (e) => {
+        document.getElementById('video-guidance-value').textContent = e.target.value;
+    });
+}
+
+async function generateVideo() {
+    const prompt = document.getElementById('video-prompt').value.trim();
+    const outputDiv = document.getElementById('video-output');
+    const generateBtn = document.getElementById('video-generate-btn');
+
+    if (!prompt) {
+        showToast('Please enter a prompt', 'error');
+        return;
+    }
+
+    if (!currentModel || currentModelType !== 'text-to-video') {
+        showToast('Please load a text-to-video model first', 'error');
+        return;
+    }
+
+    generateBtn.disabled = true;
+    outputDiv.innerHTML = '<div class="generation-loading"><div class="spinner"></div><p>Generating video... This may take several minutes...</p></div>';
+
+    try {
+        const steps = parseInt(document.getElementById('video-steps').value);
+        const guidance = parseFloat(document.getElementById('video-guidance').value);
+
+        const response = await fetch(`${API_BASE}/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: prompt,
+                num_inference_steps: steps,
+                guidance_scale: guidance
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.video) {
+            outputDiv.innerHTML = `<video controls autoplay loop><source src="data:video/mp4;base64,${data.video}" type="video/mp4"></video>`;
+            showToast('Video generated successfully!', 'success');
+        } else {
+            outputDiv.innerHTML = '<div class="empty-output">Generation failed</div>';
+            showToast(`Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        outputDiv.innerHTML = '<div class="empty-output">Generation failed</div>';
+        showToast(`Error: ${error.message}`, 'error');
+    }
+
+    generateBtn.disabled = false;
+}
+
+// Image to Video
+function initializeImageToVideo() {
+    const uploadArea = document.getElementById('i2v-upload-area');
+    const fileInput = document.getElementById('i2v-image-input');
+    const preview = document.getElementById('i2v-preview');
+    const generateBtn = document.getElementById('i2v-generate-btn');
+    const stepsSlider = document.getElementById('i2v-steps');
+
+    setupImageUpload(uploadArea, fileInput, preview, 'i2v');
+
+    generateBtn.addEventListener('click', generateImageToVideo);
+
+    stepsSlider.addEventListener('input', (e) => {
+        document.getElementById('i2v-steps-value').textContent = e.target.value;
+    });
+}
+
+async function generateImageToVideo() {
+    const prompt = document.getElementById('i2v-prompt').value.trim();
+    const outputDiv = document.getElementById('i2v-output');
+    const generateBtn = document.getElementById('i2v-generate-btn');
+
+    if (!prompt) {
+        showToast('Please enter a prompt', 'error');
+        return;
+    }
+
+    if (!uploadedImages.i2v) {
+        showToast('Please upload an image first', 'error');
+        return;
+    }
+
+    if (!currentModel || currentModelType !== 'image-to-video') {
+        showToast('Please load an image-to-video model first', 'error');
+        return;
+    }
+
+    generateBtn.disabled = true;
+    outputDiv.innerHTML = '<div class="generation-loading"><div class="spinner"></div><p>Generating video... This may take several minutes...</p></div>';
+
+    try {
+        const steps = parseInt(document.getElementById('i2v-steps').value);
+
+        const response = await fetch(`${API_BASE}/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: prompt,
+                image_data: uploadedImages.i2v,
+                num_inference_steps: steps
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.video) {
+            outputDiv.innerHTML = `<video controls autoplay loop><source src="data:video/mp4;base64,${data.video}" type="video/mp4"></video>`;
+            showToast('Video generated successfully!', 'success');
+        } else {
+            outputDiv.innerHTML = '<div class="empty-output">Generation failed</div>';
+            showToast(`Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        outputDiv.innerHTML = '<div class="empty-output">Generation failed</div>';
+        showToast(`Error: ${error.message}`, 'error');
+    }
+
+    generateBtn.disabled = false;
+}
+
+// Image Upload Helper
+function setupImageUpload(uploadArea, fileInput, preview, key) {
+    // Click to upload
+    uploadArea.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    // File selection
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            handleImageFile(file, preview, key);
+        }
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            handleImageFile(file, preview, key);
+        } else {
+            showToast('Please drop an image file', 'error');
+        }
+    });
+}
+
+function handleImageFile(file, preview, key) {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        uploadedImages[key] = dataUrl;
+
+        // Show preview
+        preview.src = dataUrl;
+        preview.style.display = 'block';
+        preview.parentElement.querySelector('.upload-placeholder').style.display = 'none';
+
+        showToast('Image uploaded successfully', 'success');
+    };
+
+    reader.readAsDataURL(file);
 }
 
 // Utility functions
