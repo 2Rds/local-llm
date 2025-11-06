@@ -43,8 +43,32 @@ function initializeTabs() {
 function initializeSearch() {
     const searchBtn = document.getElementById('search-btn');
     const searchInput = document.getElementById('search-input');
+    const directDownloadBtn = document.getElementById('direct-download-btn');
+    const directInput = document.getElementById('direct-input');
     const suggestions = document.querySelectorAll('.model-suggestion');
 
+    // Direct download functionality
+    directDownloadBtn.addEventListener('click', () => {
+        const modelId = directInput.value.trim();
+        if (modelId) {
+            downloadModel(modelId);
+            directInput.value = '';
+        } else {
+            showToast('Please enter a model ID', 'error');
+        }
+    });
+
+    directInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            const modelId = directInput.value.trim();
+            if (modelId) {
+                downloadModel(modelId);
+                directInput.value = '';
+            }
+        }
+    });
+
+    // Search functionality
     searchBtn.addEventListener('click', performSearch);
     searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') performSearch();

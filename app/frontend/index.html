@@ -30,7 +30,21 @@
         <!-- Browse Models Tab -->
         <div id="browse-tab" class="tab-content active">
             <div class="search-section">
-                <h2>Search HuggingFace Models</h2>
+                <h2>Option 1: Direct Model Input</h2>
+                <p class="help-text">Paste the exact model ID from HuggingFace (e.g., "gpt2" or "mistralai/Mistral-7B-v0.1")</p>
+                <div class="search-bar">
+                    <input type="text" id="direct-input" placeholder="Paste model ID here (e.g., gpt2, microsoft/phi-2)...">
+                    <button id="direct-download-btn" class="btn btn-success">Download Model</button>
+                </div>
+                <p class="help-text info-text">
+                    ⓘ This app supports <strong>text-generation models only</strong> (GPT, Llama, Mistral, etc.)
+                </p>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="search-section">
+                <h2>Option 2: Search HuggingFace Models</h2>
                 <div class="search-bar">
                     <input type="text" id="search-input" placeholder="Search for models (e.g., 'gpt2', 'llama', 'mistral')...">
                     <button id="search-btn" class="btn btn-primary">Search</button>

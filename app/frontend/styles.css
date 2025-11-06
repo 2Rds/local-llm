@@ -459,6 +459,26 @@ header h1 {
     100% { transform: rotate(360deg); }
 }
 
+/* Divider */
+.divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, #e0e0e0, transparent);
+    margin: 30px 0;
+}
+
+/* Info text */
+.info-text {
+    background: #e7f3ff;
+    padding: 10px 15px;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+    margin-top: 10px;
+}
+
+.info-text strong {
+    color: #667eea;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .model-grid {
