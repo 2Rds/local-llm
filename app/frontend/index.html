@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local LLM Runner</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 Local LLM Runner</h1>
+            <p class="subtitle">Run AI models locally on your computer</p>
+        </header>
+
+        <div class="status-bar">
+            <div id="status-indicator" class="status-indicator">
+                <span class="status-dot"></span>
+                <span id="status-text">No model loaded</span>
+            </div>
+            <button id="unload-btn" class="btn btn-secondary" style="display:none;">Unload Model</button>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="browse">Browse Models</button>
+            <button class="tab-btn" data-tab="my-models">My Models</button>
+            <button class="tab-btn" data-tab="chat">Chat</button>
+        </div>
+
+        <!-- Browse Models Tab -->
+        <div id="browse-tab" class="tab-content active">
+            <div class="search-section">
+                <h2>Search HuggingFace Models</h2>
+                <div class="search-bar">
+                    <input type="text" id="search-input" placeholder="Search for models (e.g., 'gpt2', 'llama', 'mistral')...">
+                    <button id="search-btn" class="btn btn-primary">Search</button>
+                </div>
+                <p class="help-text">
+                    Popular models to try: <span class="model-suggestion" data-model="gpt2">gpt2</span>,
+                    <span class="model-suggestion" data-model="microsoft/phi-2">phi-2</span>,
+                    <span class="model-suggestion" data-model="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama</span>
+                </p>
+            </div>
+
+            <div id="search-results" class="model-grid"></div>
+            <div id="search-loading" class="loading" style="display:none;">Searching...</div>
+        </div>
+
+        <!-- My Models Tab -->
+        <div id="my-models-tab" class="tab-content">
+            <div class="section-header">
+                <h2>Downloaded Models</h2>
+                <button id="refresh-models-btn" class="btn btn-secondary">Refresh</button>
+            </div>
+            <div id="downloaded-models" class="model-grid"></div>
+            <div id="models-loading" class="loading" style="display:none;">Loading...</div>
+            <div id="no-models" class="empty-state" style="display:none;">
+                <p>No models downloaded yet. Browse and download models from the "Browse Models" tab.</p>
+            </div>
+        </div>
+
+        <!-- Chat Tab -->
+        <div id="chat-tab" class="tab-content">
+            <div class="chat-container">
+                <div id="chat-messages" class="chat-messages"></div>
+                <div class="chat-input-container">
+                    <textarea id="chat-input" placeholder="Type your message here..." rows="3"></textarea>
+                    <div class="chat-controls">
+                        <div class="generation-params">
+                            <label>
+                                Max Length: <span id="max-length-value">100</span>
+                                <input type="range" id="max-length" min="50" max="500" value="100" step="50">
+                            </label>
+                            <label>
+                                Temperature: <span id="temperature-value">0.7</span>
+                                <input type="range" id="temperature" min="0.1" max="1.5" value="0.7" step="0.1">
+                            </label>
+                        </div>
+                        <button id="send-btn" class="btn btn-primary">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification Toast -->
+        <div id="toast" class="toast"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
