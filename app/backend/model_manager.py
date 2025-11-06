@@ -213,14 +213,25 @@ class ModelManager:
                     self.loaded_model = self.loaded_model.to(device)
 
             elif model_type == "text-to-image":
-                # Load Stable Diffusion or similar
+                # Load Stable Diffusion or similar with memory optimization
                 try:
+                    # Use low_cpu_mem_usage for better memory management
                     self.loaded_pipeline = DiffusionPipeline.from_pretrained(
                         model_path,
                         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
                         safety_checker=None,
-                        trust_remote_code=True
+                        trust_remote_code=True,
+                        low_cpu_mem_usage=True,
+                        variant="fp16" if device == "cuda" else None
                     )
+
+                    # Enable memory efficient attention if on CUDA
+                    if device == "cuda":
+                        try:
+                            self.loaded_pipeline.enable_attention_slicing()
+                        except:
+                            pass  # Not all models support this
+
                     self.loaded_pipeline = self.loaded_pipeline.to(device)
                 except Exception as e:
                     # Fallback: Try with StableDiffusionPipeline explicitly
@@ -229,21 +240,39 @@ class ModelManager:
                             model_path,
                             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
                             safety_checker=None,
-                            trust_remote_code=True
+                            trust_remote_code=True,
+                            low_cpu_mem_usage=True,
+                            variant="fp16" if device == "cuda" else None
                         )
+
+                        if device == "cuda":
+                            try:
+                                self.loaded_pipeline.enable_attention_slicing()
+                            except:
+                                pass
+
                         self.loaded_pipeline = self.loaded_pipeline.to(device)
                     except Exception as e2:
                         raise Exception(f"Unable to load text-to-image model. Error: {str(e2)}")
 
             elif model_type == "image-to-image":
-                # Load image-to-image pipeline
+                # Load image-to-image pipeline with memory optimization
                 try:
                     self.loaded_pipeline = StableDiffusionImg2ImgPipeline.from_pretrained(
                         model_path,
                         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
                         safety_checker=None,
-                        trust_remote_code=True
+                        trust_remote_code=True,
+                        low_cpu_mem_usage=True,
+                        variant="fp16" if device == "cuda" else None
                     )
+
+                    if device == "cuda":
+                        try:
+                            self.loaded_pipeline.enable_attention_slicing()
+                        except:
+                            pass
+
                     self.loaded_pipeline = self.loaded_pipeline.to(device)
                 except Exception as e:
                     # Fallback: Try generic DiffusionPipeline
@@ -252,8 +281,17 @@ class ModelManager:
                             model_path,
                             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
                             safety_checker=None,
-                            trust_remote_code=True
+                            trust_remote_code=True,
+                            low_cpu_mem_usage=True,
+                            variant="fp16" if device == "cuda" else None
                         )
+
+                        if device == "cuda":
+                            try:
+                                self.loaded_pipeline.enable_attention_slicing()
+                            except:
+                                pass
+
                         self.loaded_pipeline = self.loaded_pipeline.to(device)
                     except Exception as e2:
                         raise Exception(f"Unable to load image-to-image model. Error: {str(e2)}")
@@ -264,7 +302,7 @@ class ModelManager:
                 loaded = False
                 last_error = None
 
-                # Strategy 1: Try standard DiffusionPipeline
+                # Strategy 1: Try standard DiffusionPipeline with memory optimization
                 try:
                     from pathlib import Path
                     model_index_path = Path(model_path) / "model_index.json"
@@ -273,8 +311,17 @@ class ModelManager:
                         self.loaded_pipeline = DiffusionPipeline.from_pretrained(
                             model_path,
                             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                            trust_remote_code=True
+                            trust_remote_code=True,
+                            low_cpu_mem_usage=True,
+                            variant="fp16" if device == "cuda" else None
                         )
+
+                        if device == "cuda":
+                            try:
+                                self.loaded_pipeline.enable_attention_slicing()
+                            except:
+                                pass
+
                         self.loaded_pipeline = self.loaded_pipeline.to(device)
                         loaded = True
                 except Exception as e:
@@ -288,8 +335,17 @@ class ModelManager:
                             model_path,
                             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
                             trust_remote_code=True,
-                            custom_pipeline=model_path
+                            custom_pipeline=model_path,
+                            low_cpu_mem_usage=True,
+                            variant="fp16" if device == "cuda" else None
                         )
+
+                        if device == "cuda":
+                            try:
+                                self.loaded_pipeline.enable_attention_slicing()
+                            except:
+                                pass
+
                         self.loaded_pipeline = self.loaded_pipeline.to(device)
                         loaded = True
                     except Exception as e:
