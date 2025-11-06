@@ -9,8 +9,8 @@
 <body>
     <div class="container">
         <header>
-            <h1>🤖 Local LLM Runner</h1>
-            <p class="subtitle">Run AI models locally on your computer</p>
+            <h1>🤖 Local AI Model Runner</h1>
+            <p class="subtitle">Run AI models locally - Text, Images, and Videos</p>
         </header>
 
         <div class="status-bar">
@@ -24,20 +24,49 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="browse">Browse Models</button>
             <button class="tab-btn" data-tab="my-models">My Models</button>
-            <button class="tab-btn" data-tab="chat">Chat</button>
+            <button id="text-chat-tab-btn" class="tab-btn" data-tab="text-chat" style="display:none;">Text Chat</button>
+            <button id="image-gen-tab-btn" class="tab-btn" data-tab="image-gen" style="display:none;">Image Generation</button>
+            <button id="image-transform-tab-btn" class="tab-btn" data-tab="image-transform" style="display:none;">Image Transform</button>
+            <button id="video-gen-tab-btn" class="tab-btn" data-tab="video-gen" style="display:none;">Video Generation</button>
+            <button id="image-to-video-tab-btn" class="tab-btn" data-tab="image-to-video" style="display:none;">Image to Video</button>
         </div>
 
         <!-- Browse Models Tab -->
         <div id="browse-tab" class="tab-content active">
             <div class="search-section">
-                <h2>Search HuggingFace Models</h2>
+                <h2>Option 1: Direct Model Input</h2>
+                <p class="help-text">Paste the exact model ID from HuggingFace (e.g., "gpt2" or "stabilityai/stable-diffusion-2")</p>
                 <div class="search-bar">
-                    <input type="text" id="search-input" placeholder="Search for models (e.g., 'gpt2', 'llama', 'mistral')...">
+                    <input type="text" id="direct-input" placeholder="Paste model ID here (e.g., gpt2, stabilityai/stable-diffusion-2)...">
+                    <button id="direct-download-btn" class="btn btn-success">Download Model</button>
+                </div>
+                <p class="help-text info-text">
+                    ⓘ This app now supports: <strong>Text, Image, and Video models</strong>
+                </p>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="search-section">
+                <h2>Option 2: Search HuggingFace Models</h2>
+                <div class="filter-bar">
+                    <select id="model-type-filter" class="model-type-select">
+                        <option value="">All Model Types</option>
+                        <option value="text-to-text">Text Generation</option>
+                        <option value="text-to-image">Text to Image</option>
+                        <option value="image-to-image">Image to Image</option>
+                        <option value="text-to-video">Text to Video</option>
+                        <option value="image-to-video">Image to Video</option>
+                    </select>
+                </div>
+                <div class="search-bar">
+                    <input type="text" id="search-input" placeholder="Search for models (e.g., 'gpt2', 'stable-diffusion', 'animatediff')...">
                     <button id="search-btn" class="btn btn-primary">Search</button>
                 </div>
                 <p class="help-text">
-                    Popular models to try: <span class="model-suggestion" data-model="gpt2">gpt2</span>,
-                    <span class="model-suggestion" data-model="microsoft/phi-2">phi-2</span>,
+                    Popular models:
+                    <span class="model-suggestion" data-model="gpt2">gpt2</span>,
+                    <span class="model-suggestion" data-model="stabilityai/stable-diffusion-2-1">stable-diffusion</span>,
                     <span class="model-suggestion" data-model="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama</span>
                 </p>
             </div>
@@ -59,25 +88,153 @@
             </div>
         </div>
 
-        <!-- Chat Tab -->
-        <div id="chat-tab" class="tab-content">
+        <!-- Text Chat Tab -->
+        <div id="text-chat-tab" class="tab-content">
+            <div class="generation-header">
+                <h2>💬 Text Generation</h2>
+                <p>Chat with your text generation model</p>
+            </div>
             <div class="chat-container">
-                <div id="chat-messages" class="chat-messages"></div>
+                <div id="text-messages" class="chat-messages"></div>
                 <div class="chat-input-container">
-                    <textarea id="chat-input" placeholder="Type your message here..." rows="3"></textarea>
+                    <textarea id="text-input" placeholder="Type your message here..." rows="3"></textarea>
                     <div class="chat-controls">
                         <div class="generation-params">
                             <label>
-                                Max Length: <span id="max-length-value">100</span>
-                                <input type="range" id="max-length" min="50" max="500" value="100" step="50">
+                                Max Length: <span id="text-max-length-value">100</span>
+                                <input type="range" id="text-max-length" min="50" max="500" value="100" step="50">
                             </label>
                             <label>
-                                Temperature: <span id="temperature-value">0.7</span>
-                                <input type="range" id="temperature" min="0.1" max="1.5" value="0.7" step="0.1">
+                                Temperature: <span id="text-temperature-value">0.7</span>
+                                <input type="range" id="text-temperature" min="0.1" max="1.5" value="0.7" step="0.1">
                             </label>
                         </div>
-                        <button id="send-btn" class="btn btn-primary">Send</button>
+                        <button id="text-send-btn" class="btn btn-primary">Send</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Generation Tab (Text-to-Image) -->
+        <div id="image-gen-tab" class="tab-content">
+            <div class="generation-header">
+                <h2>🎨 Image Generation</h2>
+                <p>Generate images from text prompts</p>
+            </div>
+            <div class="generation-container">
+                <div class="generation-input">
+                    <textarea id="image-prompt" placeholder="Describe the image you want to generate..." rows="4"></textarea>
+                    <div class="generation-params">
+                        <label>
+                            Inference Steps: <span id="image-steps-value">50</span>
+                            <input type="range" id="image-steps" min="20" max="100" value="50" step="10">
+                        </label>
+                        <label>
+                            Guidance Scale: <span id="image-guidance-value">7.5</span>
+                            <input type="range" id="image-guidance" min="1" max="20" value="7.5" step="0.5">
+                        </label>
+                    </div>
+                    <button id="image-generate-btn" class="btn btn-primary">Generate Image</button>
+                </div>
+                <div id="image-output" class="generation-output">
+                    <div class="empty-output">Your generated image will appear here</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Transform Tab (Image-to-Image) -->
+        <div id="image-transform-tab" class="tab-content">
+            <div class="generation-header">
+                <h2>🖼️ Image Transform</h2>
+                <p>Transform images with AI guidance</p>
+            </div>
+            <div class="generation-container">
+                <div class="generation-input">
+                    <div class="image-upload-area" id="transform-upload-area">
+                        <input type="file" id="transform-image-input" accept="image/*" hidden>
+                        <div class="upload-placeholder">
+                            <span class="upload-icon">📤</span>
+                            <p>Click to upload an image</p>
+                            <p class="upload-hint">or drag and drop</p>
+                        </div>
+                        <img id="transform-preview" class="image-preview" style="display:none;">
+                    </div>
+                    <textarea id="transform-prompt" placeholder="Describe how you want to transform the image..." rows="3"></textarea>
+                    <div class="generation-params">
+                        <label>
+                            Inference Steps: <span id="transform-steps-value">50</span>
+                            <input type="range" id="transform-steps" min="20" max="100" value="50" step="10">
+                        </label>
+                        <label>
+                            Guidance Scale: <span id="transform-guidance-value">7.5</span>
+                            <input type="range" id="transform-guidance" min="1" max="20" value="7.5" step="0.5">
+                        </label>
+                    </div>
+                    <button id="transform-generate-btn" class="btn btn-primary">Transform Image</button>
+                </div>
+                <div id="transform-output" class="generation-output">
+                    <div class="empty-output">Your transformed image will appear here</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Video Generation Tab (Text-to-Video) -->
+        <div id="video-gen-tab" class="tab-content">
+            <div class="generation-header">
+                <h2>🎬 Video Generation</h2>
+                <p>Generate videos from text descriptions</p>
+            </div>
+            <div class="generation-container">
+                <div class="generation-input">
+                    <textarea id="video-prompt" placeholder="Describe the video you want to generate..." rows="4"></textarea>
+                    <div class="generation-params">
+                        <label>
+                            Inference Steps: <span id="video-steps-value">50</span>
+                            <input type="range" id="video-steps" min="20" max="100" value="50" step="10">
+                        </label>
+                        <label>
+                            Guidance Scale: <span id="video-guidance-value">7.5</span>
+                            <input type="range" id="video-guidance" min="1" max="20" value="7.5" step="0.5">
+                        </label>
+                    </div>
+                    <button id="video-generate-btn" class="btn btn-primary">Generate Video</button>
+                    <p class="help-text">⚠️ Video generation can take several minutes</p>
+                </div>
+                <div id="video-output" class="generation-output">
+                    <div class="empty-output">Your generated video will appear here</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image to Video Tab -->
+        <div id="image-to-video-tab" class="tab-content">
+            <div class="generation-header">
+                <h2>🎥 Image to Video</h2>
+                <p>Animate still images into videos</p>
+            </div>
+            <div class="generation-container">
+                <div class="generation-input">
+                    <div class="image-upload-area" id="i2v-upload-area">
+                        <input type="file" id="i2v-image-input" accept="image/*" hidden>
+                        <div class="upload-placeholder">
+                            <span class="upload-icon">📤</span>
+                            <p>Click to upload an image</p>
+                            <p class="upload-hint">or drag and drop</p>
+                        </div>
+                        <img id="i2v-preview" class="image-preview" style="display:none;">
+                    </div>
+                    <textarea id="i2v-prompt" placeholder="Describe the animation/motion you want..." rows="3"></textarea>
+                    <div class="generation-params">
+                        <label>
+                            Inference Steps: <span id="i2v-steps-value">50</span>
+                            <input type="range" id="i2v-steps" min="20" max="100" value="50" step="10">
+                        </label>
+                    </div>
+                    <button id="i2v-generate-btn" class="btn btn-primary">Generate Video</button>
+                    <p class="help-text">⚠️ Video generation can take several minutes</p>
+                </div>
+                <div id="i2v-output" class="generation-output">
+                    <div class="empty-output">Your generated video will appear here</div>
                 </div>
             </div>
         </div>

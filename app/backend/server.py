@@ -28,8 +28,9 @@ def search_models():
     """Search for models on HuggingFace"""
     query = request.args.get('q', '')
     limit = int(request.args.get('limit', 20))
+    model_type = request.args.get('model_type', None)
 
-    results = model_manager.search_models(query=query, limit=limit)
+    results = model_manager.search_models(query=query, limit=limit, model_type=model_type)
     return jsonify({"success": True, "models": results})
 
 @app.route('/api/download', methods=['POST'])
@@ -78,23 +79,29 @@ def unload_model():
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
-    """Generate text using the loaded model"""
+    """Generate output using the loaded model (text/image/video)"""
     data = request.json
     prompt = data.get('prompt', '')
     max_length = data.get('max_length', 100)
     temperature = data.get('temperature', 0.7)
     top_p = data.get('top_p', 0.9)
     top_k = data.get('top_k', 50)
+    num_inference_steps = data.get('num_inference_steps', 50)
+    guidance_scale = data.get('guidance_scale', 7.5)
+    image_data = data.get('image_data', None)
 
-    if not prompt:
-        return jsonify({"success": False, "error": "prompt required"}), 400
+    if not prompt and not image_data:
+        return jsonify({"success": False, "error": "prompt or image_data required"}), 400
 
     result = model_manager.generate(
         prompt=prompt,
         max_length=max_length,
         temperature=temperature,
         top_p=top_p,
-        top_k=top_k
+        top_k=top_k,
+        num_inference_steps=num_inference_steps,
+        guidance_scale=guidance_scale,
+        image_data=image_data
     )
     return jsonify(result)
 
