@@ -214,29 +214,106 @@ class ModelManager:
 
             elif model_type == "text-to-image":
                 # Load Stable Diffusion or similar
-                self.loaded_pipeline = DiffusionPipeline.from_pretrained(
-                    model_path,
-                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                    safety_checker=None
-                )
-                self.loaded_pipeline = self.loaded_pipeline.to(device)
+                try:
+                    self.loaded_pipeline = DiffusionPipeline.from_pretrained(
+                        model_path,
+                        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                        safety_checker=None,
+                        trust_remote_code=True
+                    )
+                    self.loaded_pipeline = self.loaded_pipeline.to(device)
+                except Exception as e:
+                    # Fallback: Try with StableDiffusionPipeline explicitly
+                    try:
+                        self.loaded_pipeline = StableDiffusionPipeline.from_pretrained(
+                            model_path,
+                            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                            safety_checker=None,
+                            trust_remote_code=True
+                        )
+                        self.loaded_pipeline = self.loaded_pipeline.to(device)
+                    except Exception as e2:
+                        raise Exception(f"Unable to load text-to-image model. Error: {str(e2)}")
 
             elif model_type == "image-to-image":
                 # Load image-to-image pipeline
-                self.loaded_pipeline = StableDiffusionImg2ImgPipeline.from_pretrained(
-                    model_path,
-                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                    safety_checker=None
-                )
-                self.loaded_pipeline = self.loaded_pipeline.to(device)
+                try:
+                    self.loaded_pipeline = StableDiffusionImg2ImgPipeline.from_pretrained(
+                        model_path,
+                        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                        safety_checker=None,
+                        trust_remote_code=True
+                    )
+                    self.loaded_pipeline = self.loaded_pipeline.to(device)
+                except Exception as e:
+                    # Fallback: Try generic DiffusionPipeline
+                    try:
+                        self.loaded_pipeline = DiffusionPipeline.from_pretrained(
+                            model_path,
+                            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                            safety_checker=None,
+                            trust_remote_code=True
+                        )
+                        self.loaded_pipeline = self.loaded_pipeline.to(device)
+                    except Exception as e2:
+                        raise Exception(f"Unable to load image-to-image model. Error: {str(e2)}")
 
             elif model_type in ["text-to-video", "image-to-video"]:
                 # Load video generation pipeline
-                self.loaded_pipeline = DiffusionPipeline.from_pretrained(
-                    model_path,
-                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                )
-                self.loaded_pipeline = self.loaded_pipeline.to(device)
+                # Try multiple loading strategies for different model formats
+                loaded = False
+                last_error = None
+
+                # Strategy 1: Try standard DiffusionPipeline
+                try:
+                    from pathlib import Path
+                    model_index_path = Path(model_path) / "model_index.json"
+
+                    if model_index_path.exists():
+                        self.loaded_pipeline = DiffusionPipeline.from_pretrained(
+                            model_path,
+                            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                            trust_remote_code=True
+                        )
+                        self.loaded_pipeline = self.loaded_pipeline.to(device)
+                        loaded = True
+                except Exception as e:
+                    last_error = e
+
+                # Strategy 2: Try loading with custom pipeline
+                if not loaded:
+                    try:
+                        # Some video models use custom pipeline classes
+                        self.loaded_pipeline = DiffusionPipeline.from_pretrained(
+                            model_path,
+                            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                            trust_remote_code=True,
+                            custom_pipeline=model_path
+                        )
+                        self.loaded_pipeline = self.loaded_pipeline.to(device)
+                        loaded = True
+                    except Exception as e:
+                        last_error = e
+
+                # Strategy 3: Try loading as a generic transformers pipeline
+                if not loaded:
+                    try:
+                        self.loaded_pipeline = pipeline(
+                            task="image-to-video" if model_type == "image-to-video" else "text-to-video",
+                            model=model_path,
+                            trust_remote_code=True,
+                            device=0 if device == "cuda" else -1
+                        )
+                        loaded = True
+                    except Exception as e:
+                        last_error = e
+
+                if not loaded:
+                    # Provide helpful error message
+                    error_msg = f"Unable to load video model. This model may not be compatible with standard video pipelines. "
+                    error_msg += f"The model might require a specific loading method or custom code. "
+                    error_msg += f"Last error: {str(last_error)}"
+                    raise Exception(error_msg)
 
             self.current_model_id = model_id
             self.current_model_type = model_type
